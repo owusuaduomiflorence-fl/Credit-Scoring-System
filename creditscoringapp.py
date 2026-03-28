@@ -5,6 +5,9 @@ import joblib
 import boto3
 import shap
 
+try:
+    st.info("Loading dataset from Cloudflare R2 bucket")
+    
 # ---------------------------
 # Cloudflare R2 Connection
 # ---------------------------
@@ -14,6 +17,14 @@ R2_ACCESS_KEY = st.secrets["R2_ACCESS_KEY_ID"]
 R2_SECRET_KEY = st.secrets["R2_SECRET_ACCESS_KEY"]
 R2_BUCKET = st.secrets["R2_BUCKET_NAME"]
 
+# Initialize S3 client for Cloudflare R2
+s3 = boto3.client(
+    "s3",
+    endpoint_url=R2_ENDPOINT_URL,
+    aws_access_key_id=R2_ACCESS_KEY_ID,
+    aws_secret_access_key=R2_SECRET_ACCESS_KEY
+)
+
 # Function to load files from R2
 def load_from_r2(file_name):
     obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
@@ -22,10 +33,9 @@ def load_from_r2(file_name):
 # ---------------------------
 # Load models & scaler
 # ---------------------------
-st.sidebar.title("Load Models from Cloudflare R2")
-logreg_file = "logreg_v1.pkl"
-xgb_file = "xgb_v1.pkl"
-scaler_file = "scaler_v1.pkl"
+logreg_file = "models/logreg_v1.pkl"
+xgb_file = "models/xgb_v1.pkl"
+scaler_file = "models/scaler_v1.pkl"
 
 # Load Logistic Regression
 logreg_model = joblib.load(load_from_r2(logreg_file))
@@ -37,7 +47,7 @@ scaler = joblib.load(load_from_r2(scaler_file))
 # ---------------------------
 # Streamlit App Layout
 # ---------------------------
-st.title("End-to-End Credit Scoring System")
+st.title("Credit Scoring & Loan Decision System")
 st.markdown("""
 This app predicts the probability of 90-day delinquency for customers using Logistic Regression and XGBoost.
 """)
