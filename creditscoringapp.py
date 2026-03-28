@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
 import joblib
 import boto3
@@ -7,7 +8,7 @@ import shap
 
 try:
     st.info("Loading dataset from Cloudflare R2 bucket")
-    
+
 # ---------------------------
 # Cloudflare R2 Connection
 # ---------------------------
@@ -20,15 +21,20 @@ R2_BUCKET = st.secrets["R2_BUCKET_NAME"]
 # Initialize S3 client for Cloudflare R2
 s3 = boto3.client(
     "s3",
-    endpoint_url=R2_ENDPOINT_URL,
-    aws_access_key_id=R2_ACCESS_KEY_ID,
-    aws_secret_access_key=R2_SECRET_ACCESS_KEY
+    endpoint_url=R2_ENDPOINT,
+    aws_access_key_id=R2_ACCESS_KEY,
+    aws_secret_access_key=R2_SECRET_KEY
 )
 
 # Function to load files from R2
 def load_from_r2(file_name):
-    obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
-    return obj['Body'].read()
+    try:
+        obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
+        return obj['Body'].read()
+    except Exception as e:
+        st.error(f"Error loading {file_name} from R2: {e}")
+        return None
+
 
 # ---------------------------
 # Load models & scaler
