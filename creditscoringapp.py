@@ -37,11 +37,16 @@ try:
         aws_secret_access_key=R2_SECRET_KEY
     )
 
-    # Example: load CSV for reference or batch predictions
-    uploaded_file_name = "creditscore.csv" 
-    obj = s3.get_object(Bucket=R2_BUCKET, Key=uploaded_file_name)
+    # List objects in bucket and pick the first CSV
+    objects = s3.list_objects_v2(Bucket=R2_BUCKET)
+    file_name = next((obj['Key'] for obj in objects.get('Contents', []) if obj['Key'].lower().endswith('.csv')), None)
+    if file_name is None:
+        raise Exception(f"No CSV file found in bucket {R2_BUCKET}")
+
+    obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
-    st.success(f"Loaded dataset from R2: {uploaded_file_name}")
+    st.success(f"Loaded dataset from R2: {file_name}")
+
 except Exception as e:
     st.error(f"Failed to load data from Cloudflare R2: {e}")
     st.stop()
@@ -93,7 +98,21 @@ def user_input_features():
         "NumberOfTime60-89DaysPastDueNotWorse": [NumberOfTime60_89DaysPastDueNotWorse],
         "NumberOfDependents": [NumberOfDependents]
     }
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+
+    # ---------------------------
+    # Derived features
+    # ---------------------------
+    df['TotalPastDue'] = (
+        df['NumberOfTime30-59DaysPastDueNotWorse'] +
+        df['NumberOfTime60-89DaysPastDueNotWorse'] +
+        df['NumberOfTimes90DaysLate']
+    )
+    df['DebtPerIncome'] = df['DebtRatio'] * df['MonthlyIncome']
+
+    # Reorder columns to match model
+    df = df[xgb_model.feature_names_in_]
+    return df
 
 input_df = user_input_features()
 
@@ -140,6 +159,18 @@ st.subheader("Batch Predictions via CSV")
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 if uploaded_file:
     batch_data = pd.read_csv(uploaded_file)
+
+    # Derived features for batch
+    batch_data['TotalPastDue'] = (
+        batch_data['NumberOfTime30-59DaysPastDueNotWorse'] +
+        batch_data['NumberOfTime60-89DaysPastDueNotWorse'] +
+        batch_data['NumberOfTimes90DaysLate']
+    )
+    batch_data['DebtPerIncome'] = batch_data['DebtRatio'] * batch_data['MonthlyIncome']
+
+    # Reorder columns to match model
+    batch_data = batch_data[xgb_model.feature_names_in_]
+
     batch_scaled = scaler.transform(batch_data)
     batch_logreg_probs = logreg_model.predict_proba(batch_scaled)[:,1]
     batch_xgb_probs = xgb_model.predict_proba(batch_data)[:,1]
