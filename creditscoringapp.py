@@ -96,6 +96,26 @@ except Exception as e:
     st.stop()
 
 # ---------------------------
+# Data Cleaning Function
+# ---------------------------
+def clean_numeric_columns(df):
+    """
+    Converts all numeric-like strings to floats and removes brackets if present.
+    """
+    # Apply to all cells in the dataframe
+    df = df.applymap(
+        lambda x: float(str(x).replace("[", "").replace("]", "")) 
+        if isinstance(x, str) else x
+    )
+    return df
+
+# Clean the dataset loaded from Cloudflare R2
+data_df = clean_numeric_columns(data_df)
+
+# Clean user input as well
+input_df = clean_numeric_columns(input_df)
+
+# ---------------------------
 # User Input Section
 # ---------------------------
 st.sidebar.header("Customer Data Input")
@@ -132,6 +152,8 @@ def user_input_features():
     )
     df['DebtPerIncome'] = df['DebtRatio'] * df['MonthlyIncome']
     return df
+
+
 
 input_df = user_input_features()
 
