@@ -8,3 +8,4 @@ boto3==1.28.0
 markdown-it-py==4.0.0
 mdurl==0.1.2
 pygments==2.19.2
+shap==0.42.1
