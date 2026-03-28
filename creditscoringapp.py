@@ -158,7 +158,7 @@ try:
     # Ensure clean numeric input
     shap_input = clean_numeric(input_df)
 
-    explainer = shap.Explainer(xgb_model)
+    explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer(shap_input)
 
     # Plot
