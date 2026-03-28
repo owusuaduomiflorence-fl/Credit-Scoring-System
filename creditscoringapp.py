@@ -7,181 +7,189 @@ from io import BytesIO
 import shap
 
 # ---------------------------
-# Page Setup
+# PAGE SETUP
 # ---------------------------
 st.set_page_config(page_title="Credit Scoring System", layout="wide")
 st.title("Credit Scoring & Loan Decision System")
-st.markdown("Predict probability of 90-day delinquency using ML models.")
 
 # ---------------------------
-# Load Data from Cloudflare R2
+# LOAD DATA FROM R2
 # ---------------------------
 try:
     st.info("Connecting to Cloudflare R2...")
 
-    R2_ENDPOINT = st.secrets["R2_ENDPOINT_URL"]
-    R2_ACCESS_KEY = st.secrets["R2_ACCESS_KEY_ID"]
-    R2_SECRET_KEY = st.secrets["R2_SECRET_ACCESS_KEY"]
-    R2_BUCKET = st.secrets["R2_BUCKET_NAME"]
-
     s3 = boto3.client(
         "s3",
-        endpoint_url=R2_ENDPOINT,
-        aws_access_key_id=R2_ACCESS_KEY,
-        aws_secret_access_key=R2_SECRET_KEY
+        endpoint_url=st.secrets["R2_ENDPOINT_URL"],
+        aws_access_key_id=st.secrets["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=st.secrets["R2_SECRET_ACCESS_KEY"]
     )
 
-    objects = s3.list_objects_v2(Bucket=R2_BUCKET)
+    bucket = st.secrets["R2_BUCKET_NAME"]
 
+    objects = s3.list_objects_v2(Bucket=bucket)
     file_name = next(
-        (obj['Key'] for obj in objects.get('Contents', []) if obj['Key'].lower().endswith('.csv')),
+        (obj["Key"] for obj in objects["Contents"] if obj["Key"].endswith(".csv")),
         None
     )
 
-    if file_name is None:
-        raise Exception("No CSV file found in bucket")
+    obj = s3.get_object(Bucket=bucket, Key=file_name)
+    data_df = pd.read_csv(BytesIO(obj["Body"].read()))
 
-    obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
-    data_df = pd.read_csv(BytesIO(obj['Body'].read()))
-
-    st.success(f"Loaded dataset from R2: {file_name}")
+    st.success(f"Loaded dataset: {file_name}")
 
 except Exception as e:
-    st.error(f"Failed to load data from R2: {e}")
+    st.error(f"R2 Error: {e}")
     st.stop()
 
 # ---------------------------
-# Load Models
+# LOAD MODELS
 # ---------------------------
 try:
     logreg_model = joblib.load("models/logreg_v1.pkl")
     xgb_model = joblib.load("models/xgb_v1.pkl")
     scaler = joblib.load("models/scaler_v1.pkl")
-
     st.success("Models loaded successfully")
 
 except Exception as e:
-    st.error(f"Model loading failed: {e}")
+    st.error(f"Model load error: {e}")
     st.stop()
 
 # ---------------------------
-# User Input
+# USER INPUT
 # ---------------------------
 st.sidebar.header("Customer Input")
 
-def get_user_input():
+def get_input():
     data = {
-        "RevolvingUtilizationOfUnsecuredLines": st.sidebar.number_input("Revolving Utilization", 0.0, 10.0, 0.5),
+        "RevolvingUtilizationOfUnsecuredLines": st.sidebar.number_input("Utilization", 0.0, 10.0, 0.5),
         "Age": st.sidebar.number_input("Age", 18, 100, 30),
         "NumberOfTime30-59DaysPastDueNotWorse": st.sidebar.number_input("30-59 Days Late", 0, 20, 0),
         "DebtRatio": st.sidebar.number_input("Debt Ratio", 0.0, 10.0, 0.2),
-        "MonthlyIncome": st.sidebar.number_input("Monthly Income", 0, 100000, 3000),
-        "NumberOfOpenCreditLinesAndLoans": st.sidebar.number_input("Open Credit Lines", 0, 50, 5),
+        "MonthlyIncome": st.sidebar.number_input("Income", 0, 100000, 3000),
+        "NumberOfOpenCreditLinesAndLoans": st.sidebar.number_input("Credit Lines", 0, 50, 5),
         "NumberOfTimes90DaysLate": st.sidebar.number_input("90 Days Late", 0, 20, 0),
         "NumberRealEstateLoansOrLines": st.sidebar.number_input("Real Estate Loans", 0, 20, 1),
         "NumberOfTime60-89DaysPastDueNotWorse": st.sidebar.number_input("60-89 Days Late", 0, 20, 0),
-        "NumberOfDependents": st.sidebar.number_input("Dependents", 0, 20, 0)
+        "NumberOfDependents": st.sidebar.number_input("Dependents", 0, 10, 0),
     }
-    return pd.DataFrame([data])
 
-input_df = get_user_input()
+    df = pd.DataFrame([data])
 
-# ---------------------------
-# Feature Engineering (CRITICAL FIX)
-# ---------------------------
-model_input = input_df.copy()
+    # ---------------------------
+    # FEATURE ENGINEERING (CRITICAL FIX)
+    # ---------------------------
+    df["TotalPastDue"] = (
+        df["NumberOfTime30-59DaysPastDueNotWorse"] +
+        df["NumberOfTime60-89DaysPastDueNotWorse"] +
+        df["NumberOfTimes90DaysLate"]
+    )
 
-model_input['TotalPastDue'] = (
-    model_input['NumberOfTime30-59DaysPastDueNotWorse'] +
-    model_input['NumberOfTime60-89DaysPastDueNotWorse'] +
-    model_input['NumberOfTimes90DaysLate']
-)
+    df["DebtPerIncome"] = df["DebtRatio"] * df["MonthlyIncome"]
 
-model_input['DebtPerIncome'] = (
-    model_input['DebtRatio'] * model_input['MonthlyIncome']
-)
+    return df
 
-# Align with training features
-features = scaler.feature_names_in_
-model_input = model_input[features]
+input_df = get_input()
 
 # ---------------------------
-# Predictions
+# FORCE NUMERIC (CRITICAL FIX)
+# ---------------------------
+input_df = input_df.apply(pd.to_numeric, errors='coerce')
+
+# ---------------------------
+# FEATURE ORDER FIX (CRITICAL)
+# ---------------------------
+FEATURE_ORDER = [
+    'RevolvingUtilizationOfUnsecuredLines',
+    'Age',
+    'NumberOfTime30-59DaysPastDueNotWorse',
+    'DebtRatio',
+    'MonthlyIncome',
+    'NumberOfOpenCreditLinesAndLoans',
+    'NumberOfTimes90DaysLate',
+    'NumberRealEstateLoansOrLines',
+    'NumberOfTime60-89DaysPastDueNotWorse',
+    'NumberOfDependents',
+    'TotalPastDue',
+    'DebtPerIncome'
+]
+
+input_df = input_df[FEATURE_ORDER]
+
+# ---------------------------
+# PREDICTIONS
 # ---------------------------
 st.subheader("Predictions")
 
-try:
-    # Logistic Regression
-    scaled_input = scaler.transform(model_input)
-    logreg_prob = logreg_model.predict_proba(scaled_input)[0][1]
-    logreg_pred = logreg_model.predict(scaled_input)[0]
+scaled_input = scaler.transform(input_df)
 
-    # XGBoost
-    xgb_prob = xgb_model.predict_proba(model_input)[0][1]
-    xgb_pred = xgb_model.predict(model_input)[0]
+logreg_prob = logreg_model.predict_proba(scaled_input)[0][1]
+logreg_pred = logreg_model.predict(scaled_input)[0]
 
-    st.write("### Logistic Regression")
-    st.write(f"Prediction: {'Delinquent' if logreg_pred else 'Not Delinquent'}")
-    st.write(f"Probability: {logreg_prob:.2f}")
+xgb_prob = xgb_model.predict_proba(input_df)[0][1]
+xgb_pred = xgb_model.predict(input_df)[0]
 
-    st.write("### XGBoost")
-    st.write(f"Prediction: {'Delinquent' if xgb_pred else 'Not Delinquent'}")
-    st.write(f"Probability: {xgb_prob:.2f}")
+st.write("### Logistic Regression")
+st.write(f"Prediction: {'Delinquent' if logreg_pred else 'Not Delinquent'}")
+st.write(f"Probability: {logreg_prob:.2f}")
 
-except Exception as e:
-    st.error(f"Prediction error: {e}")
+st.write("### XGBoost")
+st.write(f"Prediction: {'Delinquent' if xgb_pred else 'Not Delinquent'}")
+st.write(f"Probability: {xgb_prob:.2f}")
 
 # ---------------------------
-# SHAP Explainability
+# SHAP (FIXED)
 # ---------------------------
-st.subheader("SHAP Explainability (XGBoost)")
+st.subheader("SHAP Explainability")
 
 try:
     explainer = shap.TreeExplainer(xgb_model)
-    shap_values = explainer.shap_values(model_input)
+    shap_values = explainer.shap_values(input_df.astype(float))
 
-    st.set_option('deprecation.showPyplotGlobalUse', False)
-    shap.force_plot(explainer.expected_value, shap_values, model_input, matplotlib=True)
-    st.pyplot(bbox_inches='tight')
+    shap.force_plot(
+        explainer.expected_value,
+        shap_values,
+        input_df,
+        matplotlib=True
+    )
+    st.pyplot(bbox_inches="tight")
 
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
 
 # ---------------------------
-# Batch Prediction
+# BATCH CSV
 # ---------------------------
 st.subheader("Batch Prediction")
 
 file = st.file_uploader("Upload CSV", type=["csv"])
 
 if file:
-    try:
-        batch_df = pd.read_csv(file)
+    df = pd.read_csv(file)
 
-        # Feature Engineering
-        batch_df['TotalPastDue'] = (
-            batch_df['NumberOfTime30-59DaysPastDueNotWorse'] +
-            batch_df['NumberOfTime60-89DaysPastDueNotWorse'] +
-            batch_df['NumberOfTimes90DaysLate']
-        )
+    # Feature engineering
+    df["TotalPastDue"] = (
+        df["NumberOfTime30-59DaysPastDueNotWorse"] +
+        df["NumberOfTime60-89DaysPastDueNotWorse"] +
+        df["NumberOfTimes90DaysLate"]
+    )
 
-        batch_df['DebtPerIncome'] = batch_df['DebtRatio'] * batch_df['MonthlyIncome']
+    df["DebtPerIncome"] = df["DebtRatio"] * df["MonthlyIncome"]
 
-        batch_df = batch_df[features]
+    # Force numeric
+    df = df.apply(pd.to_numeric, errors='coerce')
 
-        # Predictions
-        batch_scaled = scaler.transform(batch_df)
+    df = df[FEATURE_ORDER]
 
-        batch_df['LogReg_Prob'] = logreg_model.predict_proba(batch_scaled)[:, 1]
-        batch_df['XGB_Prob'] = xgb_model.predict_proba(batch_df)[:, 1]
+    scaled = scaler.transform(df)
 
-        st.dataframe(batch_df)
+    df["LogReg_Prob"] = logreg_model.predict_proba(scaled)[:,1]
+    df["XGB_Prob"] = xgb_model.predict_proba(df)[:,1]
 
-        st.download_button(
-            "Download Predictions",
-            batch_df.to_csv(index=False),
-            "predictions.csv"
-        )
+    st.dataframe(df)
 
-    except Exception as e:
-        st.error(f"Batch prediction error: {e}")
+    st.download_button(
+        "Download Predictions",
+        df.to_csv(index=False),
+        "predictions.csv"
+    )
