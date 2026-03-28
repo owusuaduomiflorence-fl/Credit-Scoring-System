@@ -160,14 +160,25 @@ st.write(f"Probability of 90-day delinquency: {xgb_prob:.2f}")
 # ---------------------------
 # SHAP Explainability
 # ---------------------------
+# ---------------------------
+# SHAP Explainability
+# ---------------------------
 st.subheader("SHAP Explainability (XGBoost)")
 
 try:
-    explainer = shap.Explainer(xgb_model, input_df)
-    shap_values = explainer(input_df)
+    # Use TreeExplainer for XGBoost
+    explainer = shap.TreeExplainer(xgb_model)
+    
+    # Convert DataFrame to NumPy array to avoid string/format issues
+    shap_values = explainer.shap_values(input_df.values)
+    
     st.set_option('deprecation.showPyplotGlobalUse', False)
-    shap.plots.force(shap_values)
-    st.pyplot(bbox_inches='tight')
+    
+    # Force plot
+    st.write("### Feature Impact on Prediction")
+    shap.initjs()
+    shap.force_plot(explainer.expected_value, shap_values, input_df, matplotlib=False, show=True)
+    
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
 
