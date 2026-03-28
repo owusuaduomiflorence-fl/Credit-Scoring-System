@@ -1,0 +1,25 @@
+# Data manipulation
+pandas==2.1.0
+numpy==1.26.0
+
+# Machine Learning
+scikit-learn==1.3.0
+xgboost==1.7.6
+imbalanced-learn==1.12.0
+shap==0.42.1
+
+# Visualization
+matplotlib==3.8.0
+seaborn==0.12.2
+
+# Streamlit app
+streamlit==1.25.0
+
+# Joblib for saving/loading models
+joblib==1.3.2
+
+# Cloudflare R2 / S3 storage
+boto3==1.28.0
+
+# Data versioning (optional)
+dvc==2.52.0
