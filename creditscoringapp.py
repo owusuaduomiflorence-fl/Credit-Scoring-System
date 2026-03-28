@@ -13,6 +13,18 @@ st.set_page_config(page_title="Credit Scoring System", layout="wide")
 st.title("Credit Scoring & Loan Decision System")
 
 # ---------------------------
+# CLEANING FUNCTION (BEST FIX)
+# ---------------------------
+def clean_numeric(df):
+    def convert(x):
+        try:
+            x = str(x).replace("[", "").replace("]", "").strip()
+            return float(x)
+        except:
+            return np.nan
+    return df.applymap(convert)
+
+# ---------------------------
 # LOAD DATA FROM R2
 # ---------------------------
 try:
@@ -77,7 +89,7 @@ def get_input():
     df = pd.DataFrame([data])
 
     # ---------------------------
-    # FEATURE ENGINEERING (CRITICAL FIX)
+    # FEATURE ENGINEERING
     # ---------------------------
     df["TotalPastDue"] = (
         df["NumberOfTime30-59DaysPastDueNotWorse"] +
@@ -92,12 +104,12 @@ def get_input():
 input_df = get_input()
 
 # ---------------------------
-# FORCE NUMERIC (CRITICAL FIX)
+# CLEAN + FORCE NUMERIC
 # ---------------------------
-input_df = input_df.apply(pd.to_numeric, errors='coerce')
+input_df = clean_numeric(input_df)
 
 # ---------------------------
-# FEATURE ORDER FIX (CRITICAL)
+# FEATURE ORDER (CRITICAL)
 # ---------------------------
 FEATURE_ORDER = [
     'RevolvingUtilizationOfUnsecuredLines',
@@ -138,27 +150,26 @@ st.write(f"Prediction: {'Delinquent' if xgb_pred else 'Not Delinquent'}")
 st.write(f"Probability: {xgb_prob:.2f}")
 
 # ---------------------------
-# SHAP (FIXED)
+# SHAP EXPLAINABILITY (FIXED)
 # ---------------------------
 st.subheader("SHAP Explainability")
 
 try:
-    explainer = shap.TreeExplainer(xgb_model)
-    shap_values = explainer.shap_values(input_df.astype(float))
+    # Ensure clean numeric input
+    shap_input = clean_numeric(input_df)
 
-    shap.force_plot(
-        explainer.expected_value,
-        shap_values,
-        input_df,
-        matplotlib=True
-    )
+    explainer = shap.Explainer(xgb_model)
+    shap_values = explainer(shap_input)
+
+    # Plot
+    shap.plots.waterfall(shap_values[0])
     st.pyplot(bbox_inches="tight")
 
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
 
 # ---------------------------
-# BATCH CSV
+# BATCH PREDICTION
 # ---------------------------
 st.subheader("Batch Prediction")
 
@@ -176,8 +187,8 @@ if file:
 
     df["DebtPerIncome"] = df["DebtRatio"] * df["MonthlyIncome"]
 
-    # Force numeric
-    df = df.apply(pd.to_numeric, errors='coerce')
+    # CLEAN DATA (IMPORTANT)
+    df = clean_numeric(df)
 
     df = df[FEATURE_ORDER]
 
