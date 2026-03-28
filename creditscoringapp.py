@@ -38,7 +38,7 @@ try:
     )
 
     # Example: load CSV for reference or batch predictions
-    uploaded_file_name = "customer_data.csv"  # change to your R2 CSV key
+    uploaded_file_name = "creditscore.csv" 
     obj = s3.get_object(Bucket=R2_BUCKET, Key=uploaded_file_name)
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
     st.success(f"Loaded dataset from R2: {uploaded_file_name}")
