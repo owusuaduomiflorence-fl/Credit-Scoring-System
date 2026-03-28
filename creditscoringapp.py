@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import boto3
 import shap
+import boto3
 from io import BytesIO
 
 # ---------------------------
@@ -16,60 +16,46 @@ This app predicts the probability of 90-day delinquency for customers using **Lo
 """)
 
 # ---------------------------
-# Cloudflare R2 Connection
+# Load Models & Scaler from repo
 # ---------------------------
 try:
-    st.info("Connecting to Cloudflare R2 bucket...")
+    st.info("Loading pre-trained models...")
 
-    # Get keys from Streamlit secrets
-    R2_ENDPOINT = st.secrets["R2_ENDPOINT_URL"]
-    R2_ACCESS_KEY = st.secrets["R2_ACCESS_KEY_ID"]
-    R2_SECRET_KEY = st.secrets["R2_SECRET_ACCESS_KEY"]
-    R2_BUCKET = st.secrets["R2_BUCKET_NAME"]
-
-    # Initialize S3 client for R2
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=R2_ENDPOINT,
-        aws_access_key_id=R2_ACCESS_KEY,
-        aws_secret_access_key=R2_SECRET_KEY
-    )
-
-except Exception as e:
-    st.error(f"Could not connect to Cloudflare R2: {e}")
-    st.stop()
-
-
-# ---------------------------
-# Function to load models from R2
-# ---------------------------
-def load_from_r2(file_name):
-    try:
-        obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
-        return BytesIO(obj['Body'].read())
-    except Exception as e:
-        st.error(f"Could not load {file_name} from R2: {e}")
-        st.stop()
-
-
-# ---------------------------
-# Load Models & Scaler
-# ---------------------------
-try:
-    st.info("Loading pre-trained models from Cloudflare R2...")
-
-    logreg_file = "models/logreg_v1.pkl"
-    xgb_file = "models/xgb_v1.pkl"
-    scaler_file = "models/scaler_v1.pkl"
-
-    logreg_model = joblib.load(load_from_r2(logreg_file))
-    xgb_model = joblib.load(load_from_r2(xgb_file))
-    scaler = joblib.load(load_from_r2(scaler_file))
+    logreg_model = joblib.load("models/logreg_v1.pkl")
+    xgb_model = joblib.load("models/xgb_v1.pkl")
+    scaler = joblib.load("models/scaler_v1.pkl")
 
 except Exception as e:
     st.error(f"Failed to load models: {e}")
     st.stop()
 
+# ---------------------------
+# Cloudflare R2 Connection for Data
+# ---------------------------
+try:
+    st.info("Connecting to Cloudflare R2 bucket for data...")
+
+    endpoint_url = st.secrets["R2_ENDPOINT_URL"]
+    access_key = st.secrets["R2_ACCESS_KEY_ID"]
+    secret_key = st.secrets["R2_SECRET_ACCESS_KEY"]
+    bucket_name = st.secrets["R2_BUCKET_NAME"]
+
+    # Initialize S3 client
+    s3 = boto3.client(
+        's3',
+        endpoint_url=endpoint_url,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key
+    )
+
+except Exception as e:
+    st.error(f"Failed to connect to Cloudflare R2: {e}")
+    st.stop()
+
+# Function to load CSV from R2
+def load_csv_from_r2(file_name):
+    obj = s3.get_object(Bucket=bucket_name, Key=file_name)
+    return pd.read_csv(BytesIO(obj['Body'].read()))
 
 # ---------------------------
 # User Input Section
@@ -109,7 +95,6 @@ def user_input_features():
 
 input_df = user_input_features()
 
-
 # ---------------------------
 # Predictions
 # ---------------------------
@@ -132,42 +117,48 @@ st.write("### XGBoost")
 st.write(f"Prediction: {'Delinquent' if xgb_pred==1 else 'Not Delinquent'}")
 st.write(f"Probability of 90-day delinquency: {xgb_prob:.2f}")
 
-
 # ---------------------------
-# SHAP Explainability (Optional)
+# SHAP Explainability
 # ---------------------------
 st.subheader("SHAP Explainability (XGBoost)")
 
 try:
     explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer.shap_values(input_df)
-
     st.set_option('deprecation.showPyplotGlobalUse', False)
     shap.force_plot(explainer.expected_value, shap_values, input_df, matplotlib=True)
     st.pyplot(bbox_inches='tight')
-
 except Exception as e:
     st.warning(f"SHAP explainability could not be rendered: {e}")
 
+# ---------------------------
+# Batch Predictions via CSV from R2
+# ---------------------------
+st.subheader("Batch Predictions via CSV (Cloudflare R2)")
 
-# ---------------------------
-# Batch Predictions via CSV
-# ---------------------------
-st.subheader("Batch Predictions via CSV")
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
-if uploaded_file:
-    try:
+uploaded_file = st.file_uploader("Upload CSV (or leave blank to fetch from R2)", type=["csv"])
+
+try:
+    if uploaded_file:
         batch_data = pd.read_csv(uploaded_file)
-        batch_scaled = scaler.transform(batch_data)
-        batch_logreg_probs = logreg_model.predict_proba(batch_scaled)[:,1]
-        batch_xgb_probs = xgb_model.predict_proba(batch_data)[:,1]
-        batch_data["LogReg_Prob"] = batch_logreg_probs
-        batch_data["XGB_Prob"] = batch_xgb_probs
-        st.dataframe(batch_data)
-        st.download_button(
-            "Download Predictions CSV",
-            batch_data.to_csv(index=False),
-            "predictions.csv"
-        )
-    except Exception as e:
-        st.error(f"Failed batch prediction: {e}")
+    else:
+        st.info("Fetching sample CSV from R2 bucket...")
+        # Example: replace 'batch_input.csv' with your actual filename in R2
+        batch_data = load_csv_from_r2("batch_input.csv")
+
+    batch_scaled = scaler.transform(batch_data)
+    batch_logreg_probs = logreg_model.predict_proba(batch_scaled)[:,1]
+    batch_xgb_probs = xgb_model.predict_proba(batch_data)[:,1]
+
+    batch_data["LogReg_Prob"] = batch_logreg_probs
+    batch_data["XGB_Prob"] = batch_xgb_probs
+
+    st.dataframe(batch_data)
+    st.download_button(
+        "Download Predictions CSV",
+        batch_data.to_csv(index=False),
+        "predictions.csv"
+    )
+
+except Exception as e:
+    st.error(f"Failed batch prediction: {e}")
