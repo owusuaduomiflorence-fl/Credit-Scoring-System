@@ -35,10 +35,20 @@ FEATURE_COLUMNS = [
 # Data Cleaning
 # ---------------------------
 def clean_numeric_columns(df):
-    return df.applymap(
-        lambda x: float(str(x).replace("[","").replace("]","")) if isinstance(x,str) else x
-    )
-
+    def to_float(x):
+        if pd.isna(x):
+            return np.nan
+        if isinstance(x, str):
+            # Remove brackets and spaces
+            x = x.replace("[","").replace("]","").replace(",","").strip()
+            try:
+                return float(x)
+            except:
+                return np.nan
+        return float(x)
+    
+    return df.applymap(to_float)
+    
 # ---------------------------
 # Load Data from R2 (Optional)
 # ---------------------------
