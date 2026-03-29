@@ -179,21 +179,17 @@ log_prediction(log_df)
 # ---------------------------
 st.subheader("SHAP Explainability & Business Interpretation")
 
-try:
-    if data_df is not None:
-        background = data_df.sample(min(50, len(data_df)))
-    else:
-        background = input_df.copy()
+if data_df is not None:
+    background = data_df.sample(min(50, len(data_df)))
+else:
+    background = input_df.copy()
 
-    background_array = clean_numeric_columns(background).fillna(0).to_numpy(dtype=float)
-    input_array = clean_numeric_columns(input_df).fillna(0).to_numpy(dtype=float)
+explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
+shap_values = explainer(input_df)
 
-    explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background_array)
-    shap_values = explainer(input_array)
-
-    fig, ax = plt.subplots()
-    shap.plots.waterfall(shap_values[0], show=False)
-    st.pyplot(fig)
+fig, ax = plt.subplots()
+shap.plots.waterfall(shap_values[0], show=False)
+st.pyplot(fig)
 
     # Business Interpretation
     st.markdown("### Business Interpretation")
