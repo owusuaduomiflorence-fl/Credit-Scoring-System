@@ -166,11 +166,12 @@ try:
     else:
         background = input_df.copy()
 
-    background = force_numeric(background)
-    background.fillna(background.median(), inplace=True)
+    # Force numeric and convert to numpy float
+    background = force_numeric(background).fillna(0).values.astype(float)
+    input_array = force_numeric(input_df).fillna(0).values.astype(float)
 
     explainer = shap.TreeExplainer(xgb_model, data=background)
-    shap_values = explainer(input_df)
+    shap_values = explainer(input_array)
 
     fig, ax = plt.subplots()
     shap.plots.waterfall(shap_values[0], show=False)
