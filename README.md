@@ -61,7 +61,18 @@ This app is ideal for:
 
 * Logistic Regression & XGBoost models ready for production
 * Scaler applied for proper feature normalization
+  
+**Optimized Models**
 
+* Logistic Regression and XGBoost models were tuned using hyperparameter optimization.
+  
+**Cross-Validation**
+  
+* Model performance was validated using k-fold cross-validation to ensure robustness and reduce overfitting.
+
+**Pre-trained Scaler**
+
+* Features were scaled using StandardScaler to standardize input for Logistic Regression and XGBoost.
 ---
 
 ## Dataset
@@ -88,7 +99,7 @@ The app accesses the dataset directly from the cloud bucket.
 | ----------------- | ------------------------------------------- |
 | Programming       | Python                                      |
 | Data Handling     | Pandas, NumPy                               |
-| Machine Learning  | Scikit-learn, Logistic Regression, XGBoost |
+| Machine Learning  | Scikit-learn (Logistic Regression, XGBoost, StandardScaler, Hyperparameter Tuning, Cross-Validation) |
 | Explainability    | SHAP                                        |
 | Visualization     | Matplotlib, Streamlit                       |
 | Web App           | Streamlit                                   |
