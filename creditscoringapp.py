@@ -168,16 +168,31 @@ if file:
     batch = pd.read_csv(file)
     batch = clean_numeric_columns(batch)
 
+    # Feature engineering
     batch['TotalPastDue'] = (batch['NumberOfTime30-59DaysPastDueNotWorse'] +
                              batch['NumberOfTime60-89DaysPastDueNotWorse'] +
                              batch['NumberOfTimes90DaysLate'])
     batch['DebtPerIncome'] = batch['DebtRatio'] * batch['MonthlyIncome']
+
+    # Keep only feature columns
     batch = batch[FEATURE_COLUMNS]
 
-    batch_scaled = scaler.transform(batch)
+    # Handle missing values
+    batch = batch.fillna(batch.median())
 
+    # Make predictions
+    batch_scaled = scaler.transform(batch)
     batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
     batch["XGB_Prob"] = xgb_model.predict_proba(batch)[:,1]
 
+    # Display
     st.dataframe(batch)
-    st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
+
+    # Download predictions button
+    csv = batch.to_csv(index=False)
+    st.download_button(
+        label="Download Predictions",
+        data=csv,
+        file_name="predictions.csv",
+        mime="text/csv"
+    )
