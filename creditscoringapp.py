@@ -15,7 +15,7 @@ st.title("Credit Scoring & Loan Decision System")
 
 st.markdown("""
 This app predicts the likelihood of a customer defaulting on a loan using Logistic Regression and XGBoost models. 
-Upload a CSV to see batch predictions, and understand the top features influencing the XGBoost predictions.
+Predictions are automatically run on the dataset loaded from Cloudflare R2. You can also upload your own CSV for batch predictions.
 """)
 
 # ---------------------------
@@ -84,6 +84,7 @@ try:
 
 except Exception as e:
     st.warning(f"Could not load dataset from Cloudflare R2: {e}")
+    st.stop()
 
 # ---------------------------
 # Load Models
@@ -98,13 +99,23 @@ except Exception as e:
     st.stop()
 
 # ---------------------------
-# Batch Predictions
+# Run Predictions on Cloudflare Dataset
 # ---------------------------
-st.subheader("Batch Predictions")
+st.subheader("Batch Predictions on Cloudflare Dataset")
 
-file = st.file_uploader("Upload CSV", type=["csv"])
+scaled_data = scaler.transform(data_df)
+data_df["LogReg_Prob"] = logreg_model.predict_proba(scaled_data)[:,1]
+data_df["XGB_Prob"] = xgb_model.predict_proba(data_df)[:,1]
 
-batch = None
+st.dataframe(data_df)
+st.download_button("Download Predictions", data_df.to_csv(index=False), "predictions.csv")
+
+# ---------------------------
+# Optional User CSV Upload
+# ---------------------------
+st.subheader("Upload Your Own CSV for Batch Predictions")
+file = st.file_uploader("", type=["csv"])
+
 if file:
     batch = pd.read_csv(file)
     batch = clean_numeric_columns(batch)
@@ -124,7 +135,7 @@ if file:
     batch["XGB_Prob"] = xgb_model.predict_proba(batch_features)[:,1]
 
     st.dataframe(batch)
-    st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
+    st.download_button("Download Predictions", batch.to_csv(index=False), "user_predictions.csv")
 
 # ---------------------------
 # Business Interpretation (XGBoost)
@@ -132,26 +143,17 @@ if file:
 st.subheader("Business Interpretation (XGBoost)")
 
 try:
-    # Pick representative row for SHAP
-    if batch is not None:
-        sample_row = batch_features.iloc[[0]]
-    elif data_df is not None:
-        sample_row = data_df.median().to_frame().T
-    else:
-        sample_row = pd.DataFrame(np.zeros((1, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS)
-
+    # Always show interpretation on first row of Cloudflare data
+    sample_row = data_df.iloc[[0]]
     background = data_df.sample(min(50, len(data_df))) if data_df is not None else sample_row
 
-    # SHAP explainer
     explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
     shap_values = explainer(sample_row)
 
-    # Waterfall plot
     fig, ax = plt.subplots()
     shap.plots.waterfall(shap_values[0], show=False)
     st.pyplot(fig)
 
-    # Top 3 features
     feature_impact = pd.DataFrame({
         "Feature": FEATURE_COLUMNS,
         "SHAP_Value": shap_values.values[0]
