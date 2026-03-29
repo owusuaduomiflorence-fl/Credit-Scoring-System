@@ -7,13 +7,21 @@ from io import BytesIO
 import shap
 import matplotlib.pyplot as plt
 import os
-from datetime import datetime
 
 # ---------------------------
 # Streamlit Setup
 # ---------------------------
 st.set_page_config(page_title="Credit Scoring System", layout="wide")
 st.title("Credit Scoring & Loan Decision System")
+
+# ---------------------------
+# App Description
+# ---------------------------
+st.markdown("""
+This app predicts the likelihood of a customer defaulting on a loan using Logistic Regression and XGBoost models. 
+It allows single customer predictions via sidebar inputs and batch predictions via CSV uploads. 
+It also provides SHAP explainability to understand feature impacts on each prediction.
+""")
 
 # ---------------------------
 # Feature Columns
@@ -42,22 +50,6 @@ def clean_numeric_columns(df):
         if isinstance(x, str) else x
     )
     return df_clean
-
-# ---------------------------
-# Logging / Monitoring Function
-# ---------------------------
-LOG_FILE = "logs/predictions_log.csv"
-
-def log_prediction(df, log_file=LOG_FILE):
-    """Logs predictions with timestamp to CSV"""
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    df_to_log = df.copy()
-    df_to_log['Timestamp'] = datetime.now()
-    
-    if os.path.exists(log_file):
-        df_to_log.to_csv(log_file, mode='a', header=False, index=False)
-    else:
-        df_to_log.to_csv(log_file, index=False)
 
 # ---------------------------
 # Load Data from R2 (Optional)
@@ -95,10 +87,10 @@ try:
     data_df['DebtPerIncome'] = data_df['DebtRatio'] * data_df['MonthlyIncome']
     data_df = data_df[FEATURE_COLUMNS]
 
-    st.success(f"Loaded dataset: {file_name}")
+    st.success(f"Dataset loaded from Cloudflare R2 bucket: {R2_BUCKET}/{file_name}")
 
 except Exception as e:
-    st.warning(f"Could not load R2 dataset: {e}")
+    st.warning(f"Could not load dataset from Cloudflare R2: {e}")
 
 # ---------------------------
 # Load Models
@@ -167,14 +159,6 @@ st.write(f"{'Delinquent' if xgb_pred else 'Not Delinquent'}")
 st.write(f"Probability: {xgb_prob:.2f}")
 
 # ---------------------------
-# Log single prediction
-# ---------------------------
-log_df = input_df.copy()
-log_df['LogReg_Prob'] = logreg_prob
-log_df['XGB_Prob'] = xgb_prob
-log_prediction(log_df)
-
-# ---------------------------
 # SHAP Explainability & Business Interpretation
 # ---------------------------
 st.subheader("SHAP Explainability & Business Interpretation")
@@ -239,9 +223,6 @@ if file:
 
     batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
     batch["XGB_Prob"] = xgb_model.predict_proba(batch_features)[:,1]
-
-    # Log batch predictions
-    log_prediction(batch)
 
     st.dataframe(batch)
     st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
