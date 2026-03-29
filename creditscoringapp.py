@@ -33,7 +33,7 @@ FEATURE_COLUMNS = [
 ]
 
 # ---------------------------
-# Data Cleaning
+# Data Cleaning Function
 # ---------------------------
 def clean_numeric_columns(df):
     def convert_to_float(x):
@@ -166,7 +166,7 @@ try:
     else:
         background = input_df.copy()
 
-    # Ensure background is fully numeric
+    # Ensure background is numeric
     background = clean_numeric_columns(background)
     background.fillna(background.median(), inplace=True)
 
