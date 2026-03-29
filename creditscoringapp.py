@@ -46,6 +46,11 @@ def clean_numeric_columns(df):
     )
 
 # ---------------------------
+# Initialize batch variable early
+# ---------------------------
+batch = None
+
+# ---------------------------
 # Load Data from Cloudflare R2
 # ---------------------------
 data_df = None
@@ -101,11 +106,9 @@ except Exception as e:
 # ---------------------------
 # Run Predictions on Cloudflare Dataset
 # ---------------------------
-st.subheader("Batch Predictions on Cloudflare Dataset")
+st.subheader("Predictions on Cloudflare Dataset")
 
-# Keep only feature columns for prediction
 features_df = data_df[FEATURE_COLUMNS].copy()
-
 scaled_data = scaler.transform(features_df)
 data_df["LogReg_Prob"] = logreg_model.predict_proba(scaled_data)[:,1]
 data_df["XGB_Prob"] = xgb_model.predict_proba(features_df)[:,1]   
@@ -113,23 +116,22 @@ data_df["XGB_Prob"] = xgb_model.predict_proba(features_df)[:,1]
 st.dataframe(data_df)
 st.download_button("Download Predictions", data_df.to_csv(index=False), "predictions.csv")
 
-
-
 # ---------------------------
 # Business Interpretation (XGBoost)
 # ---------------------------
 st.subheader("Business Interpretation (XGBoost)")
 
 try:
-    # Use the correct feature columns only
-    if batch is not None:
-        sample_row = batch[FEATURE_COLUMNS].iloc[[0]]   # pick first row
+    # Use batch features if batch exists; otherwise Cloudflare dataset
+    if batch is not None and all(col in batch.columns for col in FEATURE_COLUMNS):
+        sample_row = batch[FEATURE_COLUMNS].iloc[[0]]
+        background = batch[FEATURE_COLUMNS].sample(min(50, len(batch)))
     elif data_df is not None:
         sample_row = data_df[FEATURE_COLUMNS].median().to_frame().T
+        background = data_df[FEATURE_COLUMNS].sample(min(50, len(data_df)))
     else:
         sample_row = pd.DataFrame(np.zeros((1, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS)
-
-    background = data_df[FEATURE_COLUMNS].sample(min(50, len(data_df))) if data_df is not None else sample_row
+        background = sample_row
 
     # SHAP explainer
     explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
@@ -154,13 +156,10 @@ try:
 except Exception as e:
     st.warning(f"Business Interpretation failed: {e}")
 
-
 # ---------------------------
-# Batch Predictions
+# Batch Predictions Upload (at the bottom)
 # ---------------------------
-st.subheader("Batch Predictions")
-
-batch = None  
+st.subheader("Upload Your CSV for Batch Predictions")
 
 file = st.file_uploader("Upload CSV", type=["csv"])
 
