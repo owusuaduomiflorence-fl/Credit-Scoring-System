@@ -36,15 +36,13 @@ FEATURE_COLUMNS = [
 # ---------------------------
 def clean_numeric_columns(df):
     return df.applymap(
-        lambda x: float(str(x).replace("[", "").replace("]", "")) 
-        if isinstance(x, str) else x
+        lambda x: float(str(x).replace("[","").replace("]","")) if isinstance(x,str) else x
     )
 
 # ---------------------------
-# Load Data from R2
+# Load Data from R2 (Optional)
 # ---------------------------
 st.sidebar.header("Data Source")
-
 try:
     R2_ENDPOINT = st.secrets["R2_ENDPOINT_URL"]
     R2_ACCESS_KEY = st.secrets["R2_ACCESS_KEY_ID"]
@@ -59,40 +57,29 @@ try:
     )
 
     objects = s3.list_objects_v2(Bucket=R2_BUCKET)
-    file_name = next(
-        (obj['Key'] for obj in objects['Contents'] if obj['Key'].endswith('.csv')),
-        None
-    )
-
+    file_name = next((obj['Key'] for obj in objects['Contents'] if obj['Key'].endswith('.csv')), None)
     obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
-
+    
     data_df = clean_numeric_columns(data_df)
-
-    # Feature Engineering
-    data_df['TotalPastDue'] = (
-        data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
-        data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
-        data_df['NumberOfTimes90DaysLate']
-    )
+    data_df['TotalPastDue'] = (data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
+                               data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
+                               data_df['NumberOfTimes90DaysLate'])
     data_df['DebtPerIncome'] = data_df['DebtRatio'] * data_df['MonthlyIncome']
-
-    # Keep only model features
     data_df = data_df[FEATURE_COLUMNS]
-
+    
     st.success(f"Loaded dataset: {file_name}")
-
 except Exception as e:
-    st.error(f"R2 Error: {e}")
-    st.stop()
+    st.warning(f"Could not load R2 dataset: {e}")
+    data_df = None
 
 # ---------------------------
 # Load Models
 # ---------------------------
 try:
-    logreg_model = joblib.load("models/logreg_v1.pkl")
-    xgb_model = joblib.load("models/xgb_v1.pkl")
-    scaler = joblib.load("models/scaler_v1.pkl")
+    logreg_model = joblib.load("models/logreg_v2.pkl")
+    xgb_model = joblib.load("models/xgb_v2.pkl")
+    scaler = joblib.load("models/scaler_v2.pkl")
     st.success("Models loaded successfully")
 except Exception as e:
     st.error(f"Model load error: {e}")
@@ -118,13 +105,10 @@ def user_input_features():
     })
 
     df = clean_numeric_columns(df)
-
-    # Feature Engineering
-    df['TotalPastDue'] = (
-        df['NumberOfTime30-59DaysPastDueNotWorse'] +
-        df['NumberOfTime60-89DaysPastDueNotWorse'] +
-        df['NumberOfTimes90DaysLate']
-    )
+    # Feature engineering
+    df['TotalPastDue'] = (df['NumberOfTime30-59DaysPastDueNotWorse'] +
+                          df['NumberOfTime60-89DaysPastDueNotWorse'] +
+                          df['NumberOfTimes90DaysLate'])
     df['DebtPerIncome'] = df['DebtRatio'] * df['MonthlyIncome']
 
     return df[FEATURE_COLUMNS]
@@ -136,37 +120,37 @@ input_df = user_input_features()
 # ---------------------------
 st.subheader("Predictions")
 
+# Logistic Regression uses scaled input
 scaled_input = scaler.transform(input_df)
-
-logreg_prob = logreg_model.predict_proba(scaled_input)[0][1]
+logreg_prob = logreg_model.predict_proba(scaled_input)[:,1]
 logreg_pred = logreg_model.predict(scaled_input)[0]
 
-xgb_prob = xgb_model.predict_proba(input_df)[0][1]
+# XGBoost uses raw input
+xgb_prob = xgb_model.predict_proba(input_df)[:,1]
 xgb_pred = xgb_model.predict(input_df)[0]
 
 st.write("### Logistic Regression")
 st.write(f"{'Delinquent' if logreg_pred else 'Not Delinquent'}")
-st.write(f"Probability: {logreg_prob:.2f}")
+st.write(f"Probability: {logreg_prob[0]:.2f}")
 
 st.write("### XGBoost")
 st.write(f"{'Delinquent' if xgb_pred else 'Not Delinquent'}")
-st.write(f"Probability: {xgb_prob:.2f}")
+st.write(f"Probability: {xgb_prob[0]:.2f}")
 
 # ---------------------------
-# SHAP Explainability (FIXED)
+# SHAP Explainability (XGBoost only)
 # ---------------------------
 st.subheader("SHAP Explainability")
-
 try:
-    background = data_df.sample(50)
+    if data_df is not None:
+        background = data_df.sample(min(50, len(data_df)))
+    else:
+        background = input_df  # fallback
 
-    explainer = shap.Explainer(
-        lambda x: xgb_model.predict_proba(x)[:,1],
-        background
-    )
-
+    explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer(input_df)
 
+    # Waterfall plot for first prediction
     fig, ax = plt.subplots()
     shap.plots.waterfall(shap_values[0], show=False)
     st.pyplot(fig)
@@ -178,20 +162,16 @@ except Exception as e:
 # Batch Prediction
 # ---------------------------
 st.subheader("Batch Predictions")
-
 file = st.file_uploader("Upload CSV")
 
 if file:
     batch = pd.read_csv(file)
     batch = clean_numeric_columns(batch)
 
-    batch['TotalPastDue'] = (
-        batch['NumberOfTime30-59DaysPastDueNotWorse'] +
-        batch['NumberOfTime60-89DaysPastDueNotWorse'] +
-        batch['NumberOfTimes90DaysLate']
-    )
+    batch['TotalPastDue'] = (batch['NumberOfTime30-59DaysPastDueNotWorse'] +
+                             batch['NumberOfTime60-89DaysPastDueNotWorse'] +
+                             batch['NumberOfTimes90DaysLate'])
     batch['DebtPerIncome'] = batch['DebtRatio'] * batch['MonthlyIncome']
-
     batch = batch[FEATURE_COLUMNS]
 
     batch_scaled = scaler.transform(batch)
@@ -200,4 +180,4 @@ if file:
     batch["XGB_Prob"] = xgb_model.predict_proba(batch)[:,1]
 
     st.dataframe(batch)
-    st.download_button("Download", batch.to_csv(index=False), "predictions.csv")
+    st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
