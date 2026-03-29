@@ -6,7 +6,6 @@ import boto3
 from io import BytesIO
 import shap
 import matplotlib.pyplot as plt
-import re
 
 # ---------------------------
 # Streamlit Setup
@@ -35,27 +34,18 @@ FEATURE_COLUMNS = [
 # ---------------------------
 # Data Cleaning
 # ---------------------------
-
-
 def clean_numeric_columns(df):
-    def to_float(x):
-        if pd.isna(x):
-            return np.nan
-        if isinstance(x, str):
-            # Remove any brackets or spaces
-            x = x.replace("[","").replace("]","").strip()
-            # Keep only valid numeric/scientific characters
-            match = re.match(r'^-?\d*\.?\d+(e-?\d+)?$', x, re.IGNORECASE)
-            if match:
-                try:
-                    return float(x)
-                except:
-                    return np.nan
-            else:
-                return np.nan
-        return float(x)
-    
-    return df.apply(lambda col: col.map(to_float))
+    # Convert all columns to float, remove brackets, commas, spaces
+    for col in df.columns:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace(r"[\[\],]", "", regex=True)  # remove [ ] and commas
+            .str.strip()
+            .replace("", np.nan)
+            .astype(float)
+        )
+    return df
 
 # ---------------------------
 # Load Data from R2 (Optional)
@@ -80,6 +70,9 @@ try:
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
 
     data_df = clean_numeric_columns(data_df)
+    data_df.fillna(data_df.median(), inplace=True)
+
+    # Feature engineering
     data_df['TotalPastDue'] = (
         data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
         data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
@@ -124,6 +117,9 @@ def user_input_features():
     })
 
     df = clean_numeric_columns(df)
+    df.fillna(df.median(), inplace=True)
+
+    # Feature engineering
     df['TotalPastDue'] = (
         df['NumberOfTime30-59DaysPastDueNotWorse'] +
         df['NumberOfTime60-89DaysPastDueNotWorse'] +
@@ -134,17 +130,18 @@ def user_input_features():
     return df[FEATURE_COLUMNS]
 
 input_df = user_input_features()
-input_df.fillna(input_df.median(), inplace=True)  # ensure no NaN
 
 # ---------------------------
 # Predictions
 # ---------------------------
 st.subheader("Predictions")
 
+# Logistic Regression (scaled)
 scaled_input = scaler.transform(input_df)
 logreg_prob = logreg_model.predict_proba(scaled_input)[:,1]
 logreg_pred = logreg_model.predict(scaled_input)[0]
 
+# XGBoost (raw)
 xgb_prob = xgb_model.predict_proba(input_df)[:,1]
 xgb_pred = xgb_model.predict(input_df)[0]
 
@@ -164,7 +161,7 @@ try:
     if data_df is not None:
         background = data_df.sample(min(50, len(data_df)))
     else:
-        background = input_df
+        background = input_df.copy()
 
     explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer(input_df)
