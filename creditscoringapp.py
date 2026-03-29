@@ -39,16 +39,14 @@ def clean_numeric_columns(df):
         if pd.isna(x):
             return np.nan
         if isinstance(x, str):
-            # Remove brackets and spaces
             x = x.replace("[","").replace("]","").replace(",","").strip()
             try:
                 return float(x)
             except:
                 return np.nan
         return float(x)
-    
     return df.applymap(to_float)
-    
+
 # ---------------------------
 # Load Data from R2 (Optional)
 # ---------------------------
@@ -116,7 +114,6 @@ def user_input_features():
     })
 
     df = clean_numeric_columns(df)
-    # Feature engineering
     df['TotalPastDue'] = (
         df['NumberOfTime30-59DaysPastDueNotWorse'] +
         df['NumberOfTime60-89DaysPastDueNotWorse'] +
@@ -127,18 +124,17 @@ def user_input_features():
     return df[FEATURE_COLUMNS]
 
 input_df = user_input_features()
+input_df.fillna(input_df.median(), inplace=True)  # ensure no NaN
 
 # ---------------------------
 # Predictions
 # ---------------------------
 st.subheader("Predictions")
 
-# Logistic Regression uses scaled input
 scaled_input = scaler.transform(input_df)
 logreg_prob = logreg_model.predict_proba(scaled_input)[:,1]
 logreg_pred = logreg_model.predict(scaled_input)[0]
 
-# XGBoost uses raw input
 xgb_prob = xgb_model.predict_proba(input_df)[:,1]
 xgb_pred = xgb_model.predict(input_df)[0]
 
@@ -158,12 +154,11 @@ try:
     if data_df is not None:
         background = data_df.sample(min(50, len(data_df)))
     else:
-        background = input_df  # fallback
+        background = input_df
 
     explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer(input_df)
 
-    # Waterfall plot for first prediction
     fig, ax = plt.subplots()
     shap.plots.waterfall(shap_values[0], show=False)
     st.pyplot(fig)
@@ -171,4 +166,13 @@ try:
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
 
-st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
+# ---------------------------
+# Download single prediction
+# ---------------------------
+input_df["LogReg_Prob"] = logreg_prob
+input_df["XGB_Prob"] = xgb_prob
+st.download_button(
+    "Download Prediction",
+    input_df.to_csv(index=False),
+    "prediction.csv"
+)
