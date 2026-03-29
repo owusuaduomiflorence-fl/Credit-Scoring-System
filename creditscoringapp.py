@@ -180,10 +180,9 @@ if file:
     # Handle missing values
     batch = batch.fillna(batch.median())
 
-    # Make predictions
-    batch_scaled = scaler.transform(batch)
-    batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
-    batch["XGB_Prob"] = xgb_model.predict_proba(batch)[:,1]
+    # Predict
+    batch["LogReg_Prob"] = logreg_model.predict_proba(scaler.transform(features))[:,1]
+    batch["XGB_Prob"] = xgb_model.predict_proba(features)[:,1]
 
     # Display
     st.dataframe(batch)
