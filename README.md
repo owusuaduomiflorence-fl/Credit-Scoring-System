@@ -57,18 +57,15 @@ This app is ideal for:
 * SHAP waterfall plots showing feature impact
 * Top features increasing or decreasing default risk
 
-**Pre-trained Models**
+**Pre-trained & Optimized Models**
 
 * Logistic Regression & XGBoost models ready for production
-* Scaler applied for proper feature normalization
-  
-**Optimized Models**
 
 * Logistic Regression and XGBoost models were tuned using hyperparameter optimization.
   
 **Cross-Validation**
   
-* Model performance was validated using k-fold cross-validation to ensure robustness and reduce overfitting.
+* Model performance was validated using k-fold cross-validation to ensure reliability and reduce overfitting.
 
 **Pre-trained Scaler**
 
