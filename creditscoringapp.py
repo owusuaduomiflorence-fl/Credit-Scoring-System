@@ -6,6 +6,7 @@ import boto3
 from io import BytesIO
 import shap
 import matplotlib.pyplot as plt
+import re
 
 # ---------------------------
 # Streamlit Setup
@@ -14,7 +15,7 @@ st.set_page_config(page_title="Credit Scoring System", layout="wide")
 st.title("Credit Scoring & Loan Decision System")
 
 # ---------------------------
-# Feature Columns (CRITICAL)
+# Feature Columns
 # ---------------------------
 FEATURE_COLUMNS = [
     "RevolvingUtilizationOfUnsecuredLines",
@@ -35,17 +36,19 @@ FEATURE_COLUMNS = [
 # Data Cleaning
 # ---------------------------
 def clean_numeric_columns(df):
-    # Convert all columns to float, remove brackets, commas, spaces
-    for col in df.columns:
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace(r"[\[\],]", "", regex=True)  # remove [ ] and commas
-            .str.strip()
-            .replace("", np.nan)
-            .astype(float)
-        )
-    return df
+    def convert_to_float(x):
+        if pd.isna(x):
+            return np.nan
+        if isinstance(x, str):
+            # Remove brackets, quotes, commas, spaces
+            x = re.sub(r"[\[\]'\" ]", "", x)
+            try:
+                return float(x)
+            except:
+                return np.nan
+        return float(x)
+    
+    return df.apply(lambda col: col.map(convert_to_float))
 
 # ---------------------------
 # Load Data from R2 (Optional)
@@ -163,7 +166,11 @@ try:
     else:
         background = input_df.copy()
 
-    explainer = shap.TreeExplainer(xgb_model)
+    # Ensure background is fully numeric
+    background = clean_numeric_columns(background)
+    background.fillna(background.median(), inplace=True)
+
+    explainer = shap.TreeExplainer(xgb_model, data=background)
     shap_values = explainer(input_df)
 
     fig, ax = plt.subplots()
