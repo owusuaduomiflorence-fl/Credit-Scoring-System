@@ -6,7 +6,6 @@ import boto3
 from io import BytesIO
 import shap
 import matplotlib.pyplot as plt
-import os
 
 # ---------------------------
 # Streamlit Setup
@@ -14,11 +13,9 @@ import os
 st.set_page_config(page_title="Credit Scoring System", layout="wide")
 st.title("Credit Scoring & Loan Decision System")
 
-# ---------------------------
-# App Description
-# ---------------------------
 st.markdown("""
 This app predicts the likelihood of a customer defaulting on a loan using Logistic Regression and XGBoost models. 
+Upload a CSV to see batch predictions, and understand the top features influencing the XGBoost predictions.
 """)
 
 # ---------------------------
@@ -43,14 +40,13 @@ FEATURE_COLUMNS = [
 # Data Cleaning Function
 # ---------------------------
 def clean_numeric_columns(df):
-    df_clean = df.applymap(
+    return df.applymap(
         lambda x: float(str(x).replace("[", "").replace("]", "").replace("'", "").replace('"',''))
         if isinstance(x, str) else x
     )
-    return df_clean
 
 # ---------------------------
-# Load Data from R2 (Optional)
+# Load Data from Cloudflare R2
 # ---------------------------
 st.sidebar.header("Data Source")
 data_df = None
@@ -103,107 +99,13 @@ except Exception as e:
     st.stop()
 
 # ---------------------------
-# User Input
-# ---------------------------
-st.sidebar.header("Customer Input")
-
-def user_input_features():
-    df = pd.DataFrame({
-        "RevolvingUtilizationOfUnsecuredLines":[st.sidebar.number_input("Utilization",0.0,10.0,0.5)],
-        "Age":[st.sidebar.number_input("Age",18,100,30)],
-        "NumberOfTime30-59DaysPastDueNotWorse":[st.sidebar.number_input("30-59 Days Late",0,20,0)],
-        "DebtRatio":[st.sidebar.number_input("Debt Ratio",0.0,10.0,0.2)],
-        "MonthlyIncome":[st.sidebar.number_input("Income",0,1000000,3000)],
-        "NumberOfOpenCreditLinesAndLoans":[st.sidebar.number_input("Credit Lines",0,50,5)],
-        "NumberOfTimes90DaysLate":[st.sidebar.number_input("90 Days Late",0,20,0)],
-        "NumberRealEstateLoansOrLines":[st.sidebar.number_input("Real Estate Loans",0,20,1)],
-        "NumberOfTime60-89DaysPastDueNotWorse":[st.sidebar.number_input("60-89 Days Late",0,20,0)],
-        "NumberOfDependents":[st.sidebar.number_input("Dependents",0,20,0)]
-    })
-
-    df = clean_numeric_columns(df)
-    df.fillna(df.median(), inplace=True)
-
-    # Feature engineering
-    df['TotalPastDue'] = (
-        df['NumberOfTime30-59DaysPastDueNotWorse'] +
-        df['NumberOfTime60-89DaysPastDueNotWorse'] +
-        df['NumberOfTimes90DaysLate']
-    )
-    df['DebtPerIncome'] = df['DebtRatio'] * df['MonthlyIncome']
-
-    return df[FEATURE_COLUMNS]
-
-input_df = user_input_features()
-
-# ---------------------------
-# Predictions
-# ---------------------------
-st.subheader("Predictions")
-
-scaled_input = scaler.transform(input_df)
-logreg_prob = logreg_model.predict_proba(scaled_input)[:,1][0]
-logreg_pred = logreg_model.predict(scaled_input)[0]
-
-xgb_prob = xgb_model.predict_proba(input_df)[:,1][0]
-xgb_pred = xgb_model.predict(input_df)[0]
-
-st.write("### Logistic Regression")
-st.write(f"{'Delinquent' if logreg_pred else 'Not Delinquent'}")
-st.write(f"Probability: {logreg_prob:.2f}")
-
-st.write("### XGBoost")
-st.write(f"{'Delinquent' if xgb_pred else 'Not Delinquent'}")
-st.write(f"Probability: {xgb_prob:.2f}")
-
-# ---------------------------
-# SHAP Explainability & Business Interpretation
-# ---------------------------
-st.subheader("SHAP Explainability & Business Interpretation")
-
-try:
-    if data_df is not None:
-        background = data_df.sample(min(50, len(data_df)))
-    else:
-        background = input_df.copy()
-
-    # Keep as DataFrame to preserve feature names
-    explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
-    shap_values = explainer(input_df)
-
-    fig, ax = plt.subplots()
-    shap.plots.waterfall(shap_values[0], show=False)
-    st.pyplot(fig)
-
-except Exception as e:
-    st.warning(f"SHAP failed: {e}")
-
-# ---------------------------
-# Business Interpretation
-# ---------------------------
-st.markdown("### Business Interpretation")
-feature_impact = pd.DataFrame({
-    "Feature": FEATURE_COLUMNS,
-    "SHAP_Value": shap_values.values[0]
-}).sort_values(by="SHAP_Value", key=abs, ascending=False)
-
-for i, row in feature_impact.iterrows():
-    direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
-    st.write(f"- {row['Feature']} {direction} the likelihood of delinquency (impact: {row['SHAP_Value']:.2f})")
-
-top_features = feature_impact.head(3)
-st.write("**Top 3 factors influencing this prediction:**")
-for i, row in top_features.iterrows():
-    direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
-    st.write(f"{row['Feature']} {direction} the risk of delinquency.")
-
-# ---------------------------
 # Batch Predictions
 # ---------------------------
 st.subheader("Batch Predictions")
 
 file = st.file_uploader("Upload CSV", type=["csv"])
 
+batch = None
 if file:
     batch = pd.read_csv(file)
     batch = clean_numeric_columns(batch)
@@ -224,3 +126,42 @@ if file:
 
     st.dataframe(batch)
     st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
+
+# ---------------------------
+# Business Interpretation (XGBoost)
+# ---------------------------
+st.subheader("Business Interpretation (XGBoost)")
+
+try:
+    # Pick representative row for SHAP
+    if batch is not None:
+        sample_row = batch_features.iloc[[0]]
+    elif data_df is not None:
+        sample_row = data_df.median().to_frame().T
+    else:
+        sample_row = pd.DataFrame(np.zeros((1, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS)
+
+    background = data_df.sample(min(50, len(data_df))) if data_df is not None else sample_row
+
+    # SHAP explainer
+    explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
+    shap_values = explainer(sample_row)
+
+    # Waterfall plot
+    fig, ax = plt.subplots()
+    shap.plots.waterfall(shap_values[0], show=False)
+    st.pyplot(fig)
+
+    # Top 3 features
+    feature_impact = pd.DataFrame({
+        "Feature": FEATURE_COLUMNS,
+        "SHAP_Value": shap_values.values[0]
+    }).sort_values(by="SHAP_Value", key=abs, ascending=False)
+
+    st.markdown("**Top 3 features influencing the XGBoost prediction:**")
+    for i, row in feature_impact.head(3).iterrows():
+        direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
+        st.write(f"- {row['Feature']} {direction} the likelihood of delinquency (impact: {row['SHAP_Value']:.2f})")
+
+except Exception as e:
+    st.warning(f"Business Interpretation failed: {e}")
