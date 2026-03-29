@@ -14,6 +14,24 @@ st.set_page_config(page_title="Credit Scoring System", layout="wide")
 st.title("Credit Scoring & Loan Decision System")
 
 # ---------------------------
+# Feature Columns (CRITICAL)
+# ---------------------------
+FEATURE_COLUMNS = [
+    "RevolvingUtilizationOfUnsecuredLines",
+    "Age",
+    "NumberOfTime30-59DaysPastDueNotWorse",
+    "DebtRatio",
+    "MonthlyIncome",
+    "NumberOfOpenCreditLinesAndLoans",
+    "NumberOfTimes90DaysLate",
+    "NumberRealEstateLoansOrLines",
+    "NumberOfTime60-89DaysPastDueNotWorse",
+    "NumberOfDependents",
+    "TotalPastDue",
+    "DebtPerIncome"
+]
+
+# ---------------------------
 # Data Cleaning
 # ---------------------------
 def clean_numeric_columns(df):
@@ -49,25 +67,24 @@ try:
     obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
 
-    # CLEAN ONCE HERE
     data_df = clean_numeric_columns(data_df)
+
+    # Feature Engineering
+    data_df['TotalPastDue'] = (
+        data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
+        data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
+        data_df['NumberOfTimes90DaysLate']
+    )
+    data_df['DebtPerIncome'] = data_df['DebtRatio'] * data_df['MonthlyIncome']
+
+    # Keep only model features
+    data_df = data_df[FEATURE_COLUMNS]
 
     st.success(f"Loaded dataset: {file_name}")
 
 except Exception as e:
     st.error(f"R2 Error: {e}")
     st.stop()
-
-# ---------------------------
-# Feature Engineering (DATA)
-# ---------------------------
-data_df['TotalPastDue'] = (
-    data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
-    data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
-    data_df['NumberOfTimes90DaysLate']
-)
-
-data_df['DebtPerIncome'] = data_df['DebtRatio'] * data_df['MonthlyIncome']
 
 # ---------------------------
 # Load Models
@@ -100,7 +117,6 @@ def user_input_features():
         "NumberOfDependents":[st.sidebar.number_input("Dependents",0,20,0)]
     })
 
-    # CLEAN INPUT HERE
     df = clean_numeric_columns(df)
 
     # Feature Engineering
@@ -111,7 +127,7 @@ def user_input_features():
     )
     df['DebtPerIncome'] = df['DebtRatio'] * df['MonthlyIncome']
 
-    return df
+    return df[FEATURE_COLUMNS]
 
 input_df = user_input_features()
 
@@ -137,15 +153,16 @@ st.write(f"{'Delinquent' if xgb_pred else 'Not Delinquent'}")
 st.write(f"Probability: {xgb_prob:.2f}")
 
 # ---------------------------
-# SHAP (FIXED)
+# SHAP Explainability (FIXED)
 # ---------------------------
 st.subheader("SHAP Explainability")
 
 try:
-    # Use KernelExplainer (safe fallback)
+    background = data_df.sample(50)
+
     explainer = shap.Explainer(
         lambda x: xgb_model.predict_proba(x)[:,1],
-        data_df.sample(50)
+        background
     )
 
     shap_values = explainer(input_df)
@@ -175,10 +192,12 @@ if file:
     )
     batch['DebtPerIncome'] = batch['DebtRatio'] * batch['MonthlyIncome']
 
+    batch = batch[FEATURE_COLUMNS]
+
     batch_scaled = scaler.transform(batch)
 
-    batch["LogReg"] = logreg_model.predict_proba(batch_scaled)[:,1]
-    batch["XGB"] = xgb_model.predict_proba(batch)[:,1]
+    batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
+    batch["XGB_Prob"] = xgb_model.predict_proba(batch)[:,1]
 
     st.dataframe(batch)
     st.download_button("Download", batch.to_csv(index=False), "predictions.csv")
