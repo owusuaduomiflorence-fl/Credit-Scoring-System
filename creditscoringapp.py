@@ -35,20 +35,18 @@ FEATURE_COLUMNS = [
 # ---------------------------
 # Data Cleaning Function
 # ---------------------------
-def clean_numeric_columns(df):
-    def convert_to_float(x):
+def force_numeric(df):
+    """Convert all columns to numeric, handle strings like '[5E-1]'."""
+    def convert(x):
         if pd.isna(x):
             return np.nan
         if isinstance(x, str):
-            # Remove brackets, quotes, commas, spaces
-            x = re.sub(r"[\[\]'\" ]", "", x)
-            try:
-                return float(x)
-            except:
-                return np.nan
-        return float(x)
-    
-    return df.apply(lambda col: col.map(convert_to_float))
+            x = re.sub(r"[\[\]'\" ]", "", x)  # remove brackets, quotes, spaces
+        try:
+            return float(x)
+        except:
+            return np.nan
+    return df.applymap(convert)
 
 # ---------------------------
 # Load Data from R2 (Optional)
@@ -72,7 +70,8 @@ try:
     obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
 
-    data_df = clean_numeric_columns(data_df)
+    # Force numeric
+    data_df = force_numeric(data_df)
     data_df.fillna(data_df.median(), inplace=True)
 
     # Feature engineering
@@ -119,7 +118,8 @@ def user_input_features():
         "NumberOfDependents":[st.sidebar.number_input("Dependents",0,20,0)]
     })
 
-    df = clean_numeric_columns(df)
+    # Force numeric
+    df = force_numeric(df)
     df.fillna(df.median(), inplace=True)
 
     # Feature engineering
@@ -166,8 +166,7 @@ try:
     else:
         background = input_df.copy()
 
-    # Ensure background is numeric
-    background = clean_numeric_columns(background)
+    background = force_numeric(background)
     background.fillna(background.median(), inplace=True)
 
     explainer = shap.TreeExplainer(xgb_model, data=background)
