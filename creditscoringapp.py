@@ -19,8 +19,6 @@ st.title("Credit Scoring & Loan Decision System")
 # ---------------------------
 st.markdown("""
 This app predicts the likelihood of a customer defaulting on a loan using Logistic Regression and XGBoost models. 
-It allows single customer predictions via sidebar inputs and batch predictions via CSV uploads. 
-It also provides SHAP explainability to understand feature impacts on each prediction.
 """)
 
 # ---------------------------
@@ -87,7 +85,7 @@ try:
     data_df['DebtPerIncome'] = data_df['DebtRatio'] * data_df['MonthlyIncome']
     data_df = data_df[FEATURE_COLUMNS]
 
-    st.success(f"Dataset loaded from Cloudflare R2 bucket: {R2_BUCKET}/{file_name}")
+    st.success("Dataset loaded from Cloudflare R2 bucket")
 
 except Exception as e:
     st.warning(f"Could not load dataset from Cloudflare R2: {e}")
