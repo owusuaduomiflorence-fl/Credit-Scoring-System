@@ -179,37 +179,41 @@ log_prediction(log_df)
 # ---------------------------
 st.subheader("SHAP Explainability & Business Interpretation")
 
-if data_df is not None:
-    background = data_df.sample(min(50, len(data_df)))
-else:
-    background = input_df.copy()
+try:
+    if data_df is not None:
+        background = data_df.sample(min(50, len(data_df)))
+    else:
+        background = input_df.copy()
 
-explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
-shap_values = explainer(input_df)
+    # Keep as DataFrame to preserve feature names
+    explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
+    shap_values = explainer(input_df)
 
-fig, ax = plt.subplots()
-shap.plots.waterfall(shap_values[0], show=False)
-st.pyplot(fig)
-
-    # Business Interpretation
-    st.markdown("### Business Interpretation")
-    feature_impact = pd.DataFrame({
-        "Feature": FEATURE_COLUMNS,
-        "SHAP_Value": shap_values.values[0]
-    }).sort_values(by="SHAP_Value", key=abs, ascending=False)
-
-    for i, row in feature_impact.iterrows():
-        direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
-        st.write(f"- {row['Feature']} {direction} the likelihood of delinquency (impact: {row['SHAP_Value']:.2f})")
-
-    top_features = feature_impact.head(3)
-    st.write("**Top 3 factors influencing this prediction:**")
-    for i, row in top_features.iterrows():
-        direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
-        st.write(f"{row['Feature']} {direction} the risk of delinquency.")
+    fig, ax = plt.subplots()
+    shap.plots.waterfall(shap_values[0], show=False)
+    st.pyplot(fig)
 
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
+
+# ---------------------------
+# Business Interpretation
+# ---------------------------
+st.markdown("### Business Interpretation")
+feature_impact = pd.DataFrame({
+    "Feature": FEATURE_COLUMNS,
+    "SHAP_Value": shap_values.values[0]
+}).sort_values(by="SHAP_Value", key=abs, ascending=False)
+
+for i, row in feature_impact.iterrows():
+    direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
+    st.write(f"- {row['Feature']} {direction} the likelihood of delinquency (impact: {row['SHAP_Value']:.2f})")
+
+top_features = feature_impact.head(3)
+st.write("**Top 3 factors influencing this prediction:**")
+for i, row in top_features.iterrows():
+    direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
+    st.write(f"{row['Feature']} {direction} the risk of delinquency.")
 
 # ---------------------------
 # Batch Predictions
