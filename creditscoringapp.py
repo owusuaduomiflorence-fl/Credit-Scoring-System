@@ -108,16 +108,19 @@ features_df = data_df[FEATURE_COLUMNS].copy()
 
 scaled_data = scaler.transform(features_df)
 data_df["LogReg_Prob"] = logreg_model.predict_proba(scaled_data)[:,1]
-data_df["XGB_Prob"] = xgb_model.predict_proba(features_df)[:,1]   # <-- use features_df only
+data_df["XGB_Prob"] = xgb_model.predict_proba(features_df)[:,1]   
 
 st.dataframe(data_df)
 st.download_button("Download Predictions", data_df.to_csv(index=False), "predictions.csv")
 
 # ---------------------------
-# Optional User CSV Upload
+# Batch Predictions
 # ---------------------------
-st.subheader("Upload Your Own CSV for Batch Predictions")
-file = st.file_uploader("", type=["csv"])
+st.subheader("Batch Predictions")
+
+batch = None  
+
+file = st.file_uploader("Upload CSV", type=["csv"])
 
 if file:
     batch = pd.read_csv(file)
@@ -138,7 +141,8 @@ if file:
     batch["XGB_Prob"] = xgb_model.predict_proba(batch_features)[:,1]
 
     st.dataframe(batch)
-    st.download_button("Download Predictions", batch.to_csv(index=False), "user_predictions.csv")
+    st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
+
 
 # ---------------------------
 # Business Interpretation (XGBoost)
