@@ -48,7 +48,6 @@ def clean_numeric_columns(df):
 # ---------------------------
 # Load Data from Cloudflare R2
 # ---------------------------
-st.sidebar.header("Data Source")
 data_df = None
 
 try:
