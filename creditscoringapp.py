@@ -103,9 +103,12 @@ except Exception as e:
 # ---------------------------
 st.subheader("Batch Predictions on Cloudflare Dataset")
 
-scaled_data = scaler.transform(data_df)
+# Keep only feature columns for prediction
+features_df = data_df[FEATURE_COLUMNS].copy()
+
+scaled_data = scaler.transform(features_df)
 data_df["LogReg_Prob"] = logreg_model.predict_proba(scaled_data)[:,1]
-data_df["XGB_Prob"] = xgb_model.predict_proba(data_df)[:,1]
+data_df["XGB_Prob"] = xgb_model.predict_proba(features_df)[:,1]   # <-- use features_df only
 
 st.dataframe(data_df)
 st.download_button("Download Predictions", data_df.to_csv(index=False), "predictions.csv")
