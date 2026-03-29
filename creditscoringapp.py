@@ -39,9 +39,10 @@ def clean_numeric_columns(df):
         if pd.isna(x):
             return np.nan
         if isinstance(x, str):
-            x = x.replace("[","").replace("]","").replace(",","").strip()
+            # Remove brackets and spaces
+            x = x.replace("[","").replace("]","").strip()
             try:
-                return float(x)
+                return float(x)  
             except:
                 return np.nan
         return float(x)
