@@ -60,14 +60,16 @@ try:
     file_name = next((obj['Key'] for obj in objects['Contents'] if obj['Key'].endswith('.csv')), None)
     obj = s3.get_object(Bucket=R2_BUCKET, Key=file_name)
     data_df = pd.read_csv(BytesIO(obj['Body'].read()))
-    
+
     data_df = clean_numeric_columns(data_df)
-    data_df['TotalPastDue'] = (data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
-                               data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
-                               data_df['NumberOfTimes90DaysLate'])
+    data_df['TotalPastDue'] = (
+        data_df['NumberOfTime30-59DaysPastDueNotWorse'] +
+        data_df['NumberOfTime60-89DaysPastDueNotWorse'] +
+        data_df['NumberOfTimes90DaysLate']
+    )
     data_df['DebtPerIncome'] = data_df['DebtRatio'] * data_df['MonthlyIncome']
     data_df = data_df[FEATURE_COLUMNS]
-    
+
     st.success(f"Loaded dataset: {file_name}")
 except Exception as e:
     st.warning(f"Could not load R2 dataset: {e}")
@@ -89,7 +91,6 @@ except Exception as e:
 # User Input
 # ---------------------------
 st.sidebar.header("Customer Input")
-
 def user_input_features():
     df = pd.DataFrame({
         "RevolvingUtilizationOfUnsecuredLines":[st.sidebar.number_input("Utilization",0.0,10.0,0.5)],
@@ -106,9 +107,11 @@ def user_input_features():
 
     df = clean_numeric_columns(df)
     # Feature engineering
-    df['TotalPastDue'] = (df['NumberOfTime30-59DaysPastDueNotWorse'] +
-                          df['NumberOfTime60-89DaysPastDueNotWorse'] +
-                          df['NumberOfTimes90DaysLate'])
+    df['TotalPastDue'] = (
+        df['NumberOfTime30-59DaysPastDueNotWorse'] +
+        df['NumberOfTime60-89DaysPastDueNotWorse'] +
+        df['NumberOfTimes90DaysLate']
+    )
     df['DebtPerIncome'] = df['DebtRatio'] * df['MonthlyIncome']
 
     return df[FEATURE_COLUMNS]
@@ -157,41 +160,3 @@ try:
 
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
-
-# ---------------------------
-# Batch Prediction
-# ---------------------------
-st.subheader("Batch Predictions")
-file = st.file_uploader("Upload CSV")
-
-if file:
-    batch = pd.read_csv(file)
-    batch = clean_numeric_columns(batch)
-
-    # Feature engineering
-    batch['TotalPastDue'] = (batch['NumberOfTime30-59DaysPastDueNotWorse'] +
-                             batch['NumberOfTime60-89DaysPastDueNotWorse'] +
-                             batch['NumberOfTimes90DaysLate'])
-    batch['DebtPerIncome'] = batch['DebtRatio'] * batch['MonthlyIncome']
-
-    # Keep only feature columns
-    batch = batch[FEATURE_COLUMNS]
-
-    # Handle missing values
-    batch = batch.fillna(batch.median())
-
-    # Predict
-    batch["LogReg_Prob"] = logreg_model.predict_proba(scaler.transform(features))[:,1]
-    batch["XGB_Prob"] = xgb_model.predict_proba(features)[:,1]
-
-    # Display
-    st.dataframe(batch)
-
-    # Download predictions button
-    csv = batch.to_csv(index=False)
-    st.download_button(
-        label="Download Predictions",
-        data=csv,
-        file_name="predictions.csv",
-        mime="text/csv"
-    )
