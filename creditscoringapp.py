@@ -113,35 +113,6 @@ data_df["XGB_Prob"] = xgb_model.predict_proba(features_df)[:,1]
 st.dataframe(data_df)
 st.download_button("Download Predictions", data_df.to_csv(index=False), "predictions.csv")
 
-# ---------------------------
-# Batch Predictions
-# ---------------------------
-st.subheader("Batch Predictions")
-
-batch = None  
-
-file = st.file_uploader("Upload CSV", type=["csv"])
-
-if file:
-    batch = pd.read_csv(file)
-    batch = clean_numeric_columns(batch)
-    batch.fillna(batch.median(), inplace=True)
-
-    batch['TotalPastDue'] = (
-        batch['NumberOfTime30-59DaysPastDueNotWorse'] +
-        batch['NumberOfTime60-89DaysPastDueNotWorse'] +
-        batch['NumberOfTimes90DaysLate']
-    )
-    batch['DebtPerIncome'] = batch['DebtRatio'] * batch['MonthlyIncome']
-
-    batch_features = batch[FEATURE_COLUMNS]
-    batch_scaled = scaler.transform(batch_features)
-
-    batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
-    batch["XGB_Prob"] = xgb_model.predict_proba(batch_features)[:,1]
-
-    st.dataframe(batch)
-    st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
 
 
 # ---------------------------
@@ -182,3 +153,34 @@ try:
 
 except Exception as e:
     st.warning(f"Business Interpretation failed: {e}")
+
+
+# ---------------------------
+# Batch Predictions
+# ---------------------------
+st.subheader("Batch Predictions")
+
+batch = None  
+
+file = st.file_uploader("Upload CSV", type=["csv"])
+
+if file:
+    batch = pd.read_csv(file)
+    batch = clean_numeric_columns(batch)
+    batch.fillna(batch.median(), inplace=True)
+
+    batch['TotalPastDue'] = (
+        batch['NumberOfTime30-59DaysPastDueNotWorse'] +
+        batch['NumberOfTime60-89DaysPastDueNotWorse'] +
+        batch['NumberOfTimes90DaysLate']
+    )
+    batch['DebtPerIncome'] = batch['DebtRatio'] * batch['MonthlyIncome']
+
+    batch_features = batch[FEATURE_COLUMNS]
+    batch_scaled = scaler.transform(batch_features)
+
+    batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
+    batch["XGB_Prob"] = xgb_model.predict_proba(batch_features)[:,1]
+
+    st.dataframe(batch)
+    st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
