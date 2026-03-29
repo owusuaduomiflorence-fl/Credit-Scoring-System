@@ -146,17 +146,26 @@ if file:
 st.subheader("Business Interpretation (XGBoost)")
 
 try:
-    # Always show interpretation on first row of Cloudflare data
-    sample_row = data_df.iloc[[0]]
-    background = data_df.sample(min(50, len(data_df))) if data_df is not None else sample_row
+    # Use the correct feature columns only
+    if batch is not None:
+        sample_row = batch[FEATURE_COLUMNS].iloc[[0]]   # pick first row
+    elif data_df is not None:
+        sample_row = data_df[FEATURE_COLUMNS].median().to_frame().T
+    else:
+        sample_row = pd.DataFrame(np.zeros((1, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS)
 
+    background = data_df[FEATURE_COLUMNS].sample(min(50, len(data_df))) if data_df is not None else sample_row
+
+    # SHAP explainer
     explainer = shap.Explainer(lambda x: xgb_model.predict_proba(x)[:,1], background)
     shap_values = explainer(sample_row)
 
+    # Waterfall plot
     fig, ax = plt.subplots()
     shap.plots.waterfall(shap_values[0], show=False)
     st.pyplot(fig)
 
+    # Top 3 features
     feature_impact = pd.DataFrame({
         "Feature": FEATURE_COLUMNS,
         "SHAP_Value": shap_values.values[0]
