@@ -6,6 +6,8 @@ import boto3
 from io import BytesIO
 import shap
 import matplotlib.pyplot as plt
+import os
+from datetime import datetime
 
 # ---------------------------
 # Streamlit Setup
@@ -35,7 +37,6 @@ FEATURE_COLUMNS = [
 # Data Cleaning Function
 # ---------------------------
 def clean_numeric_columns(df):
-    # Convert strings like '[5E-1]' to floats
     df_clean = df.applymap(
         lambda x: float(str(x).replace("[", "").replace("]", "").replace("'", "").replace('"',''))
         if isinstance(x, str) else x
@@ -43,11 +44,27 @@ def clean_numeric_columns(df):
     return df_clean
 
 # ---------------------------
+# Logging / Monitoring Function
+# ---------------------------
+LOG_FILE = "logs/predictions_log.csv"
+
+def log_prediction(df, log_file=LOG_FILE):
+    """Logs predictions with timestamp to CSV"""
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    df_to_log = df.copy()
+    df_to_log['Timestamp'] = datetime.now()
+    
+    if os.path.exists(log_file):
+        df_to_log.to_csv(log_file, mode='a', header=False, index=False)
+    else:
+        df_to_log.to_csv(log_file, index=False)
+
+# ---------------------------
 # Load Data from R2 (Optional)
 # ---------------------------
 st.sidebar.header("Data Source")
-
 data_df = None
+
 try:
     R2_ENDPOINT = st.secrets["R2_ENDPOINT_URL"]
     R2_ACCESS_KEY = st.secrets["R2_ACCESS_KEY_ID"]
@@ -88,7 +105,7 @@ except Exception as e:
 # ---------------------------
 try:
     logreg_model = joblib.load("models/logreg_v2.pkl")
-    xgb_model = joblib.load("models/xgb_v2.pkl")
+    xgb_model = joblib.load("models/xgb_best.pkl")
     scaler = joblib.load("models/scaler_v2.pkl")
     st.success("Models loaded successfully")
 except Exception as e:
@@ -150,9 +167,17 @@ st.write(f"{'Delinquent' if xgb_pred else 'Not Delinquent'}")
 st.write(f"Probability: {xgb_prob:.2f}")
 
 # ---------------------------
-# SHAP Explainability (FIXED)
+# Log single prediction
 # ---------------------------
-st.subheader("SHAP Explainability")
+log_df = input_df.copy()
+log_df['LogReg_Prob'] = logreg_prob
+log_df['XGB_Prob'] = xgb_prob
+log_prediction(log_df)
+
+# ---------------------------
+# SHAP Explainability & Business Interpretation
+# ---------------------------
+st.subheader("SHAP Explainability & Business Interpretation")
 
 try:
     if data_df is not None:
@@ -160,7 +185,6 @@ try:
     else:
         background = input_df.copy()
 
-    # Ensure numeric numpy arrays
     background_array = clean_numeric_columns(background).fillna(0).to_numpy(dtype=float)
     input_array = clean_numeric_columns(input_df).fillna(0).to_numpy(dtype=float)
 
@@ -170,6 +194,23 @@ try:
     fig, ax = plt.subplots()
     shap.plots.waterfall(shap_values[0], show=False)
     st.pyplot(fig)
+
+    # Business Interpretation
+    st.markdown("### Business Interpretation")
+    feature_impact = pd.DataFrame({
+        "Feature": FEATURE_COLUMNS,
+        "SHAP_Value": shap_values.values[0]
+    }).sort_values(by="SHAP_Value", key=abs, ascending=False)
+
+    for i, row in feature_impact.iterrows():
+        direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
+        st.write(f"- {row['Feature']} {direction} the likelihood of delinquency (impact: {row['SHAP_Value']:.2f})")
+
+    top_features = feature_impact.head(3)
+    st.write("**Top 3 factors influencing this prediction:**")
+    for i, row in top_features.iterrows():
+        direction = "increases" if row['SHAP_Value'] > 0 else "decreases"
+        st.write(f"{row['Feature']} {direction} the risk of delinquency.")
 
 except Exception as e:
     st.warning(f"SHAP failed: {e}")
@@ -198,6 +239,9 @@ if file:
 
     batch["LogReg_Prob"] = logreg_model.predict_proba(batch_scaled)[:,1]
     batch["XGB_Prob"] = xgb_model.predict_proba(batch_features)[:,1]
+
+    # Log batch predictions
+    log_prediction(batch)
 
     st.dataframe(batch)
     st.download_button("Download Predictions", batch.to_csv(index=False), "predictions.csv")
