@@ -6,6 +6,7 @@ import boto3
 from io import BytesIO
 import shap
 import matplotlib.pyplot as plt
+import re
 
 # ---------------------------
 # Streamlit Setup
@@ -34,19 +35,27 @@ FEATURE_COLUMNS = [
 # ---------------------------
 # Data Cleaning
 # ---------------------------
+
+
 def clean_numeric_columns(df):
     def to_float(x):
         if pd.isna(x):
             return np.nan
         if isinstance(x, str):
-            # Remove brackets and spaces
+            # Remove any brackets or spaces
             x = x.replace("[","").replace("]","").strip()
-            try:
-                return float(x)  
-            except:
+            # Keep only valid numeric/scientific characters
+            match = re.match(r'^-?\d*\.?\d+(e-?\d+)?$', x, re.IGNORECASE)
+            if match:
+                try:
+                    return float(x)
+                except:
+                    return np.nan
+            else:
                 return np.nan
         return float(x)
-    return df.applymap(to_float)
+    
+    return df.apply(lambda col: col.map(to_float))
 
 # ---------------------------
 # Load Data from R2 (Optional)
