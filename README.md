@@ -16,7 +16,7 @@ The project demonstrates:
 
 * Python for **data preprocessing, feature engineering, and modeling**
 * Pandas & NumPy for **data wrangling**
-* Scikit-learn & XGBoost for **classification and probability predictions**
+* Logistic Regression & XGBoost for **classification and probability predictions**
 * Streamlit & Matplotlib for **interactive dashboards and visualizations**
 * Cloudflare R2 for **secure cloud-hosted dataset storage**
 * Docker for **containerized deployment**
