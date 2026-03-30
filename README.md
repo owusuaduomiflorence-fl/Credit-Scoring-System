@@ -100,7 +100,7 @@ The app accesses the dataset directly from the cloud bucket.
 | Explainability    | SHAP                                        |
 | Visualization     | Matplotlib, Streamlit                       |
 | Web App           | Streamlit                                   |
-| Deployment        | Docker                                      |
+| Deployment        | Streamlit Cloud, Docker                                      |
 | Model Persistence | joblib                                      |
 | Notebook Analysis | Jupyter Notebook                            |
 | Cloud Storage     | Cloudflare R2 (S3-compatible)               |
